@@ -12,6 +12,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+
       - name: Find Android project archive
         shell: bash
         run: |
@@ -33,18 +34,20 @@ jobs:
 
           echo "ZIP açıldı."
 
+
       - name: Find Android project
         shell: bash
         run: |
           set -e
 
-          SETTINGS=$(find project -type f \( \
+          SETTINGS=$(find project -type f \
             -name "settings.gradle" \
             -o -name "settings.gradle.kts" \
-          \) | head -n 1)
+          | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
             echo "HATA: Android proje bulunamadı."
+            find project -maxdepth 5 -type f
             exit 1
           fi
 
@@ -54,11 +57,13 @@ jobs:
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
 
       - name: Configure Android SDK
         shell: bash
@@ -90,6 +95,7 @@ jobs:
 
           echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
 
+
       - name: Install Android SDK
         shell: bash
         run: |
@@ -107,43 +113,106 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
+          echo "Android SDK hazır."
+
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      # JAVA 1.8 / KOTLIN 17 HATASINI DÜZELT
-      - name: Fix JVM target compatibility
+
+      # ==================================================
+      # PROJENİN JAVA/KOTLIN JVM AYARLARINI DÜZELT
+      # ==================================================
+      - name: Fix Java Kotlin JVM targets
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
 
-          echo "JVM hedefleri 17 olarak ayarlanıyor..."
+          echo "======================================"
+          echo "JAVA / KOTLIN JVM AYARLARI DÜZELTİLİYOR"
+          echo "======================================"
 
-          cat > "$RUNNER_TEMP/jvm-fix.gradle" <<'EOF'
-          allprojects {
-              afterEvaluate { project ->
-                  project.tasks.withType(JavaCompile).configureEach {
-                      sourceCompatibility = "17"
-                      targetCompatibility = "17"
-                  }
+          python3 <<'PY'
+          import pathlib
+          import re
 
-                  project.tasks.configureEach { task ->
-                      if (task.name.toLowerCase().contains("kotlin")) {
-                          try {
-                              task.kotlinOptions.jvmTarget = "17"
-                          } catch (Exception ignored) {
-                          }
-                      }
-                  }
-              }
-          }
-          EOF
+          root = pathlib.Path(".")
 
-          echo "JVM düzeltme dosyası oluşturuldu."
+          files = list(root.rglob("*.gradle")) + list(root.rglob("*.gradle.kts"))
 
-          cat "$RUNNER_TEMP/jvm-fix.gradle"
+          print("Gradle dosyaları:")
+
+          for f in files:
+              print(" -", f)
+
+              text = f.read_text(encoding="utf-8")
+
+              # Java 8 -> Java 17
+              text = text.replace(
+                  "JavaVersion.VERSION_1_8",
+                  "JavaVersion.VERSION_17"
+              )
+
+              text = text.replace(
+                  "JavaVersion.VERSION_8",
+                  "JavaVersion.VERSION_17"
+              )
+
+              # Java sourceCompatibility / targetCompatibility
+              text = re.sub(
+                  r'(sourceCompatibility\s*=\s*)["\']1\.8["\']',
+                  r'\g<1>"17"',
+                  text
+              )
+
+              text = re.sub(
+                  r'(targetCompatibility\s*=\s*)["\']1\.8["\']',
+                  r'\g<1>"17"',
+                  text
+              )
+
+              # Kotlin JVM target
+              text = re.sub(
+                  r'(jvmTarget\s*=\s*)["\']1\.8["\']',
+                  r'\g<1>"17"',
+                  text
+              )
+
+              # Kotlin JVM enum
+              text = text.replace(
+                  "JvmTarget.JVM_1_8",
+                  "JvmTarget.JVM_17"
+              )
+
+              # Kotlin compiler option
+              text = text.replace(
+                  'jvmTarget = "1.8"',
+                  'jvmTarget = "17"'
+              )
+
+              text = text.replace(
+                  "jvmTarget = '1.8'",
+                  "jvmTarget = '17'"
+              )
+
+              f.write_text(text, encoding="utf-8")
+
+          print("")
+          print("JVM ayarları 17 seviyesine getirildi.")
+          PY
+
+          echo ""
+          echo "Kontrol:"
+          grep -RniE \
+            "VERSION_1_8|VERSION_8|jvmTarget.*1\.8|JVM_1_8|sourceCompatibility.*1\.8|targetCompatibility.*1\.8" \
+            . \
+            --include="*.gradle" \
+            --include="*.gradle.kts" \
+            || true
+
 
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
@@ -155,6 +224,8 @@ jobs:
           echo "GOAL-X AI APK DERLEME BAŞLIYOR"
           echo "======================================"
 
+          echo ""
+          echo "Java:"
           java -version
 
           echo ""
@@ -174,38 +245,12 @@ jobs:
 
           gradle assembleDebug \
             --no-daemon \
-            --stacktrace \
-            --init-script "$RUNNER_TEMP/jvm-fix.gradle"
+            --stacktrace
 
           echo ""
-          echo "APK DERLEME TAMAMLANDI!"
+          echo "======================================"
+          echo "APK DERLEME TAMAMLANDI"
+          echo "======================================"
+
 
       - name: Find APK
-        shell: bash
-        run: |
-          set -e
-
-          APK=$(find "${PROJECT_DIR}" \
-            -type f \
-            -name "*.apk" \
-            | head -n 1)
-
-          if [ -z "$APK" ]; then
-            echo "HATA: APK bulunamadı."
-            find "${PROJECT_DIR}" -type f | tail -100
-            exit 1
-          fi
-
-          echo "======================================"
-          echo "APK BULUNDU:"
-          echo "$APK"
-          echo "======================================"
-
-          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: GOAL-X-AI-APK
-          path: ${{ env.APK_PATH }}
-          if-no-files-found: error
