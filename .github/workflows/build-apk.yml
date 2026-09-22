@@ -8,249 +8,127 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
       - name: Find Android project archive
         shell: bash
         run: |
           set -e
 
-          ZIP=$(find . -maxdepth 3 -type f -iname "*.zip" | head -n 1)
+          ZIP_FILE=$(find . -type f -name "*.zip" | head -n 1)
 
-          if [ -z "$ZIP" ]; then
-            echo "HATA: Android proje ZIP dosyası bulunamadı."
+          if [ -z "$ZIP_FILE" ]; then
+            echo "Android proje ZIP dosyasi bulunamadi."
             exit 1
           fi
 
-          echo "Bulunan ZIP: $ZIP"
+          echo "Bulunan ZIP: $ZIP_FILE"
 
-          rm -rf project
-          mkdir -p project
+          rm -rf android-project
+          mkdir -p android-project
 
-          unzip -q "$ZIP" -d project
+          unzip -q "$ZIP_FILE" -d android-project
 
-          echo "ZIP açıldı."
+          SETTINGS_FILE=$(find android-project -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1)
 
-
-      - name: Find Android project
-        shell: bash
-        run: |
-          set -e
-
-          SETTINGS=$(find project -type f \
-            -name "settings.gradle" \
-            -o -name "settings.gradle.kts" \
-          | head -n 1)
-
-          if [ -z "$SETTINGS" ]; then
-            echo "HATA: Android proje bulunamadı."
-            find project -maxdepth 5 -type f
+          if [ -z "$SETTINGS_FILE" ]; then
+            echo "settings.gradle veya settings.gradle.kts bulunamadi."
+            find android-project -maxdepth 4 -type f | head -n 100
             exit 1
           fi
 
-          PROJECT_DIR=$(dirname "$SETTINGS")
-
-          echo "Android proje dizini: $PROJECT_DIR"
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
+          echo "Android proje klasoru: $PROJECT_DIR"
 
       - name: Configure Android SDK
         shell: bash
         run: |
           set -e
 
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+          export ANDROID_HOME=/usr/local/lib/android/sdk
 
-          if [ -z "$ANDROID_HOME" ]; then
-            echo "HATA: ANDROID_HOME bulunamadı."
-            exit 1
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -f "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)
           fi
-
-          SDKMANAGER=$(find "$ANDROID_HOME" \
-            -type f \
-            -name sdkmanager \
-            | head -n 1)
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "HATA: sdkmanager bulunamadı."
+            echo "sdkmanager bulunamadi."
             exit 1
           fi
 
-          echo "sdkmanager bulundu:"
-          echo "$SDKMANAGER"
+          echo "sdkmanager: $SDKMANAGER"
 
-          bash "$SDKMANAGER" --version
+          yes | bash "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" --licenses >/dev/null || true
 
-          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
-
-
-      - name: Install Android SDK
-        shell: bash
-        run: |
-          set -e
-
-          SDKMANAGER=$(find "$ANDROID_HOME" \
-            -type f \
-            -name sdkmanager \
-            | head -n 1)
-
-          yes | bash "$SDKMANAGER" --licenses || true
-
-          bash "$SDKMANAGER" \
+          bash "$SDKMANAGER" --sdk_root="$ANDROID_SDK_ROOT" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          echo "Android SDK hazır."
-
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.9'
-
-
-      # ==================================================
-      # PROJENİN JAVA/KOTLIN JVM AYARLARINI DÜZELT
-      # ==================================================
-      - name: Fix Java Kotlin JVM targets
-        working-directory: ${{ env.PROJECT_DIR }}
+      - name: Fix Kotlin JVM compatibility
         shell: bash
         run: |
           set -e
 
-          echo "======================================"
-          echo "JAVA / KOTLIN JVM AYARLARI DÜZELTİLİYOR"
-          echo "======================================"
+          cd "$PROJECT_DIR"
 
-          python3 <<'PY'
-          import pathlib
-          import re
+          if [ -f gradle.properties ]; then
+            echo "" >> gradle.properties
+            echo "kotlin.jvm.target.validation.mode=ignore" >> gradle.properties
+          else
+            echo "kotlin.jvm.target.validation.mode=ignore" > gradle.properties
+          fi
 
-          root = pathlib.Path(".")
-
-          files = list(root.rglob("*.gradle")) + list(root.rglob("*.gradle.kts"))
-
-          print("Gradle dosyaları:")
-
-          for f in files:
-              print(" -", f)
-
-              text = f.read_text(encoding="utf-8")
-
-              # Java 8 -> Java 17
-              text = text.replace(
-                  "JavaVersion.VERSION_1_8",
-                  "JavaVersion.VERSION_17"
-              )
-
-              text = text.replace(
-                  "JavaVersion.VERSION_8",
-                  "JavaVersion.VERSION_17"
-              )
-
-              # Java sourceCompatibility / targetCompatibility
-              text = re.sub(
-                  r'(sourceCompatibility\s*=\s*)["\']1\.8["\']',
-                  r'\g<1>"17"',
-                  text
-              )
-
-              text = re.sub(
-                  r'(targetCompatibility\s*=\s*)["\']1\.8["\']',
-                  r'\g<1>"17"',
-                  text
-              )
-
-              # Kotlin JVM target
-              text = re.sub(
-                  r'(jvmTarget\s*=\s*)["\']1\.8["\']',
-                  r'\g<1>"17"',
-                  text
-              )
-
-              # Kotlin JVM enum
-              text = text.replace(
-                  "JvmTarget.JVM_1_8",
-                  "JvmTarget.JVM_17"
-              )
-
-              # Kotlin compiler option
-              text = text.replace(
-                  'jvmTarget = "1.8"',
-                  'jvmTarget = "17"'
-              )
-
-              text = text.replace(
-                  "jvmTarget = '1.8'",
-                  "jvmTarget = '17'"
-              )
-
-              f.write_text(text, encoding="utf-8")
-
-          print("")
-          print("JVM ayarları 17 seviyesine getirildi.")
-          PY
-
-          echo ""
-          echo "Kontrol:"
-          grep -RniE \
-            "VERSION_1_8|VERSION_8|jvmTarget.*1\.8|JVM_1_8|sourceCompatibility.*1\.8|targetCompatibility.*1\.8" \
-            . \
-            --include="*.gradle" \
-            --include="*.gradle.kts" \
-            || true
-
+          echo "Gradle properties:"
+          cat gradle.properties
 
       - name: Build APK
-        working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
 
-          echo "======================================"
-          echo "GOAL-X AI APK DERLEME BAŞLIYOR"
-          echo "======================================"
+          cd "$PROJECT_DIR"
 
-          echo ""
-          echo "Java:"
-          java -version
-
-          echo ""
-          echo "Gradle:"
           gradle --version
 
-          echo ""
-          echo "Android SDK:"
-          echo "$ANDROID_HOME"
-
-          echo ""
-          echo "Proje:"
-          pwd
-
-          echo ""
-          echo "APK derleniyor..."
-
-          gradle assembleDebug \
-            --no-daemon \
-            --stacktrace
-
-          echo ""
-          echo "======================================"
-          echo "APK DERLEME TAMAMLANDI"
-          echo "======================================"
-
+          gradle --no-daemon --stacktrace assembleDebug
 
       - name: Find APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find "$PROJECT_DIR" -type f -name "*.apk" | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "APK olusturulamadi."
+            exit 1
+          fi
+
+          echo "APK bulundu: $APK"
+
+          mkdir -p "$GITHUB_WORKSPACE/apk-output"
+          cp "$APK" "$GITHUB_WORKSPACE/apk-output/GOAL-X-AI.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GOAL-X-AI-APK
+          path: apk-output/GOAL-X-AI.apk
+          if-no-files-found: error
