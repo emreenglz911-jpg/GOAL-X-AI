@@ -9,28 +9,21 @@ jobs:
 
     steps:
 
-      # --------------------------------------------------
-      # 1 - KODU AL
-      # --------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
 
 
-      # --------------------------------------------------
-      # 2 - ANDROID PROJE ZIP DOSYASINI BUL
-      # --------------------------------------------------
       - name: Find Android project archive
         shell: bash
         run: |
           set -e
 
-          echo "ZIP dosyaları aranıyor..."
+          echo "ZIP dosyası aranıyor..."
 
           ZIP=$(find . -maxdepth 3 -type f -iname "*.zip" | head -n 1)
 
           if [ -z "$ZIP" ]; then
             echo "HATA: Android proje ZIP dosyası bulunamadı."
-            echo "Depodaki dosyalar:"
             find . -maxdepth 3 -type f
             exit 1
           fi
@@ -47,15 +40,10 @@ jobs:
           find project -maxdepth 4 -type f | head -150
 
 
-      # --------------------------------------------------
-      # 3 - ANDROID PROJE DİZİNİNİ BUL
-      # --------------------------------------------------
       - name: Find Android project
         shell: bash
         run: |
           set -e
-
-          echo "Android proje dosyaları aranıyor..."
 
           SETTINGS=$(find project -type f \( \
             -name "settings.gradle" \
@@ -64,22 +52,17 @@ jobs:
 
           if [ -z "$SETTINGS" ]; then
             echo "HATA: settings.gradle veya settings.gradle.kts bulunamadı."
-            echo "Proje içeriği:"
             find project -maxdepth 5 -type f
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS")
 
-          echo "Android proje dizini:"
-          echo "$PROJECT_DIR"
+          echo "Android proje dizini: $PROJECT_DIR"
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
 
-      # --------------------------------------------------
-      # 4 - JAVA 17
-      # --------------------------------------------------
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -87,10 +70,6 @@ jobs:
           java-version: '17'
 
 
-      # --------------------------------------------------
-      # 5 - ANDROID SDK'YI DOĞRUDAN KULLAN
-      # setup-android ACTION KULLANILMIYOR
-      # --------------------------------------------------
       - name: Configure Android SDK
         shell: bash
         run: |
@@ -100,24 +79,34 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
 
           if [ -z "$ANDROID_HOME" ]; then
-            echo "ANDROID_HOME bulunamadı."
+            echo "HATA: ANDROID_HOME bulunamadı."
             exit 1
           fi
 
           echo "Android SDK kontrol ediliyor..."
 
-          SDKMANAGER=$(find "$ANDROID_HOME" -type f -name sdkmanager | head -n 1)
+          SDKMANAGER=$(find "$ANDROID_HOME" \
+            -type f \
+            -name sdkmanager \
+            | head -n 1)
 
           if [ -z "$SDKMANAGER" ]; then
             echo "HATA: sdkmanager bulunamadı."
-            find "$ANDROID_HOME" -maxdepth 5 -type f | head -100
+
+            find "$ANDROID_HOME" \
+              -maxdepth 6 \
+              -type f \
+              | head -100
+
             exit 1
           fi
 
           echo "sdkmanager bulundu:"
           echo "$SDKMANAGER"
 
-          chmod +x "$SDKMANAGER"
+          echo "sdkmanager çalıştırma testi:"
+
+          bash "$SDKMANAGER" --version
 
           SDK_DIR=$(dirname "$SDKMANAGER")
 
@@ -126,22 +115,26 @@ jobs:
           echo "Android SDK hazır."
 
 
-      # --------------------------------------------------
-      # 6 - ANDROID SDK PAKETLERİ
-      # --------------------------------------------------
       - name: Install Android SDK
         shell: bash
         run: |
           set -e
 
-          SDKMANAGER=$(find "$ANDROID_HOME" -type f -name sdkmanager | head -n 1)
+          SDKMANAGER=$(find "$ANDROID_HOME" \
+            -type f \
+            -name sdkmanager \
+            | head -n 1)
 
           echo "SDK Manager:"
           echo "$SDKMANAGER"
 
-          yes | "$SDKMANAGER" --licenses || true
+          echo "Android lisansları kabul ediliyor..."
 
-          "$SDKMANAGER" \
+          yes | bash "$SDKMANAGER" --licenses || true
+
+          echo "Android SDK paketleri kuruluyor..."
+
+          bash "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
@@ -149,18 +142,12 @@ jobs:
           echo "Android SDK paketleri hazır."
 
 
-      # --------------------------------------------------
-      # 7 - GRADLE 8.9
-      # --------------------------------------------------
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
 
-      # --------------------------------------------------
-      # 8 - APK DERLE
-      # --------------------------------------------------
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
@@ -188,7 +175,7 @@ jobs:
           pwd
 
           echo ""
-          echo "Proje dosyaları:"
+          echo "Proje içeriği:"
           ls -la
 
           echo ""
@@ -196,16 +183,12 @@ jobs:
 
           gradle assembleDebug \
             --no-daemon \
-            --stacktrace \
-            --info
+            --stacktrace
 
           echo ""
           echo "APK DERLEME TAMAMLANDI."
 
 
-      # --------------------------------------------------
-      # 9 - APK'YI BUL
-      # --------------------------------------------------
       - name: Find APK
         shell: bash
         run: |
@@ -245,9 +228,6 @@ jobs:
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
 
-      # --------------------------------------------------
-      # 10 - APK'YI GITHUB'A YÜKLE
-      # --------------------------------------------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
