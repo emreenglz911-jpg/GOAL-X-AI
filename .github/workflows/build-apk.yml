@@ -17,7 +17,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extract fixed Android project
+      - name: Extract FIXED Android project
         shell: bash
         run: |
           set -e
@@ -25,28 +25,25 @@ jobs:
           ZIP_FILE="./GOAL-X-AI-Android-Project-FIXED.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "FIXED ZIP dosyasi bulunamadi: $ZIP_FILE"
+            echo "FIXED ZIP bulunamadi: $ZIP_FILE"
             exit 1
           fi
 
-          echo "Kullanilan proje: $ZIP_FILE"
-
           rm -rf android-project
           mkdir -p android-project
-
           unzip -q "$ZIP_FILE" -d android-project
 
-          SETTINGS_FILE=$(find android-project -type f -name "settings.gradle" -o -name "settings.gradle.kts" | head -n 1)
+          SETTINGS_FILE=$(find android-project -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1)
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "settings.gradle veya settings.gradle.kts bulunamadi."
+            echo "Android proje dosyalari bulunamadi."
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Android proje klasoru: $PROJECT_DIR"
+          echo "Proje klasoru: $PROJECT_DIR"
 
       - name: Configure Android SDK
         shell: bash
@@ -81,4 +78,54 @@ jobs:
             "build-tools;35.0.0"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Configure Gradle
+        shell: bash
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+
+          touch gradle.properties
+
+          echo "" >> gradle.properties
+          echo "kotlin.jvm.target.validation.mode=ignore" >> gradle.properties
+          echo "org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8" >> gradle.properties
+
+      - name: Build GOAL-X AI APK
+        shell: bash
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+
+          java -version
+          gradle --version
+
+          gradle --no-daemon --stacktrace assembleDebug
+
+      - name: Find APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find "$PROJECT_DIR" -type f -name "*.apk" | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "APK olusturulamadi."
+            exit 1
+          fi
+
+          echo "APK bulundu: $APK"
+
+          mkdir -p "$GITHUB_WORKSPACE/apk-output"
+          cp "$APK" "$GITHUB_WORKSPACE/apk-output/GOAL-X-AI.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GOAL-X-AI-APK
+          path: apk-output/GOAL-X-AI.apk
+          if-no-files-found: error
+          retention-days: 7
