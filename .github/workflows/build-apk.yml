@@ -12,42 +12,123 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Find project archive
+        shell: bash
         run: |
-          ZIP=$(find . -maxdepth 1 -type f -name '*.zip' | head -n 1)
-          echo "ZIP=$ZIP" >> $GITHUB_ENV
+          set -e
+
+          ZIP=$(find . -maxdepth 2 -type f \( -iname "*.zip" \) | head -n 1)
+
+          if [ -z "$ZIP" ]; then
+            echo "HATA: Android proje ZIP dosyası bulunamadı."
+            exit 1
+          fi
+
+          echo "Bulunan proje: $ZIP"
+          echo "ZIP=$ZIP" >> "$GITHUB_ENV"
+
+          rm -rf project
+          mkdir -p project
+
           unzip -q "$ZIP" -d project
 
       - name: Find Android project
+        shell: bash
         run: |
-          SETTINGS=$(find project -name settings.gradle.kts -o -name settings.gradle | head -n 1)
+          set -e
+
+          SETTINGS=$(find project -type f \( \
+            -name "settings.gradle" -o \
+            -name "settings.gradle.kts" \
+          \) | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "HATA: Android projesi bulunamadı."
+            echo "settings.gradle veya settings.gradle.kts bulunamadı."
+            exit 1
+          fi
+
           PROJECT_DIR=$(dirname "$SETTINGS")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+
+          echo "Android projesi bulundu:"
+          echo "$PROJECT_DIR"
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
-      - name: Set up Android
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK
+      - name: Set up Android SDK
+        shell: bash
+        env:
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+          ANDROID_HOME: /usr/local/lib/android/sdk
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          set -e
 
-      - name: Set up Gradle
+          SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" \
+            -type f \
+            -name sdkmanager \
+            | head -n 1)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "HATA: sdkmanager bulunamadı."
+            exit 1
+          fi
+
+          echo "sdkmanager: $SDKMANAGER"
+
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Prepare Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '8.9'
+          gradle-version: "8.9"
 
       - name: Build APK
+        shell: bash
         working-directory: ${{ env.PROJECT_DIR }}
-        run: gradle assembleDebug --no-daemon
+        run: |
+          set -e
+
+          chmod +x gradlew 2>/dev/null || true
+
+          if [ -f "./gradlew" ]; then
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
+
+      - name: Find APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find "${PROJECT_DIR}" \
+            -type f \
+            -path "*/build/outputs/apk/*.apk" \
+            | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "HATA: APK oluşturulamadı."
+            exit 1
+          fi
+
+          echo "APK bulundu:"
+          echo "$APK"
+
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: GOAL-X-AI-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/**/*.apk
+          path: ${{ env.APK_PATH }}
+          if-no-files-found: error
