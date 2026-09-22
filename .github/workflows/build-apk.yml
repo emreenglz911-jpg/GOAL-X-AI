@@ -12,19 +12,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-
       - name: Find Android project archive
         shell: bash
         run: |
           set -e
 
-          echo "ZIP dosyası aranıyor..."
-
           ZIP=$(find . -maxdepth 3 -type f -iname "*.zip" | head -n 1)
 
           if [ -z "$ZIP" ]; then
             echo "HATA: Android proje ZIP dosyası bulunamadı."
-            find . -maxdepth 3 -type f
             exit 1
           fi
 
@@ -35,10 +31,7 @@ jobs:
 
           unzip -q "$ZIP" -d project
 
-          echo "ZIP başarıyla açıldı."
-
-          find project -maxdepth 4 -type f | head -150
-
+          echo "ZIP açıldı."
 
       - name: Find Android project
         shell: bash
@@ -51,8 +44,7 @@ jobs:
           \) | head -n 1)
 
           if [ -z "$SETTINGS" ]; then
-            echo "HATA: settings.gradle veya settings.gradle.kts bulunamadı."
-            find project -maxdepth 5 -type f
+            echo "HATA: Android proje bulunamadı."
             exit 1
           fi
 
@@ -62,13 +54,11 @@ jobs:
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
 
       - name: Configure Android SDK
         shell: bash
@@ -83,8 +73,6 @@ jobs:
             exit 1
           fi
 
-          echo "Android SDK kontrol ediliyor..."
-
           SDKMANAGER=$(find "$ANDROID_HOME" \
             -type f \
             -name sdkmanager \
@@ -92,28 +80,15 @@ jobs:
 
           if [ -z "$SDKMANAGER" ]; then
             echo "HATA: sdkmanager bulunamadı."
-
-            find "$ANDROID_HOME" \
-              -maxdepth 6 \
-              -type f \
-              | head -100
-
             exit 1
           fi
 
           echo "sdkmanager bulundu:"
           echo "$SDKMANAGER"
 
-          echo "sdkmanager çalıştırma testi:"
-
           bash "$SDKMANAGER" --version
 
-          SDK_DIR=$(dirname "$SDKMANAGER")
-
-          echo "$SDK_DIR" >> "$GITHUB_PATH"
-
-          echo "Android SDK hazır."
-
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
 
       - name: Install Android SDK
         shell: bash
@@ -125,28 +100,50 @@ jobs:
             -name sdkmanager \
             | head -n 1)
 
-          echo "SDK Manager:"
-          echo "$SDKMANAGER"
-
-          echo "Android lisansları kabul ediliyor..."
-
           yes | bash "$SDKMANAGER" --licenses || true
-
-          echo "Android SDK paketleri kuruluyor..."
 
           bash "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-          echo "Android SDK paketleri hazır."
-
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
+      # JAVA 1.8 / KOTLIN 17 HATASINI DÜZELT
+      - name: Fix JVM target compatibility
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "JVM hedefleri 17 olarak ayarlanıyor..."
+
+          cat > "$RUNNER_TEMP/jvm-fix.gradle" <<'EOF'
+          allprojects {
+              afterEvaluate { project ->
+                  project.tasks.withType(JavaCompile).configureEach {
+                      sourceCompatibility = "17"
+                      targetCompatibility = "17"
+                  }
+
+                  project.tasks.configureEach { task ->
+                      if (task.name.toLowerCase().contains("kotlin")) {
+                          try {
+                              task.kotlinOptions.jvmTarget = "17"
+                          } catch (Exception ignored) {
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+
+          echo "JVM düzeltme dosyası oluşturuldu."
+
+          cat "$RUNNER_TEMP/jvm-fix.gradle"
 
       - name: Build APK
         working-directory: ${{ env.PROJECT_DIR }}
@@ -158,8 +155,6 @@ jobs:
           echo "GOAL-X AI APK DERLEME BAŞLIYOR"
           echo "======================================"
 
-          echo ""
-          echo "Java:"
           java -version
 
           echo ""
@@ -171,30 +166,24 @@ jobs:
           echo "$ANDROID_HOME"
 
           echo ""
-          echo "Proje dizini:"
+          echo "Proje:"
           pwd
-
-          echo ""
-          echo "Proje içeriği:"
-          ls -la
 
           echo ""
           echo "APK derleniyor..."
 
           gradle assembleDebug \
             --no-daemon \
-            --stacktrace
+            --stacktrace \
+            --init-script "$RUNNER_TEMP/jvm-fix.gradle"
 
           echo ""
-          echo "APK DERLEME TAMAMLANDI."
-
+          echo "APK DERLEME TAMAMLANDI!"
 
       - name: Find APK
         shell: bash
         run: |
           set -e
-
-          echo "APK aranıyor..."
 
           APK=$(find "${PROJECT_DIR}" \
             -type f \
@@ -202,31 +191,17 @@ jobs:
             | head -n 1)
 
           if [ -z "$APK" ]; then
-            echo "HATA: APK oluşturulamadı."
-
-            echo ""
-            echo "Build klasörleri:"
-            find "${PROJECT_DIR}" \
-              -type d \
-              -name build \
-              -print
-
-            echo ""
-            echo "Son dosyalar:"
-            find "${PROJECT_DIR}" \
-              -type f \
-              | tail -100
-
+            echo "HATA: APK bulunamadı."
+            find "${PROJECT_DIR}" -type f | tail -100
             exit 1
           fi
 
           echo "======================================"
-          echo "APK BULUNDU"
+          echo "APK BULUNDU:"
           echo "$APK"
           echo "======================================"
 
           echo "APK_PATH=$APK" >> "$GITHUB_ENV"
-
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
