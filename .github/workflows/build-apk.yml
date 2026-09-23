@@ -47,4 +47,52 @@ jobs:
           SDK="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
 
           if [ ! -f "$SDK" ]; then
-            SDK=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name "
+            SDK=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name "sdkmanager" -print -quit)
+          fi
+
+          test -n "$SDK"
+
+          yes | bash "$SDK" --sdk_root="$ANDROID_SDK_ROOT" --licenses >/dev/null || true
+
+          bash "$SDK" --sdk_root="$ANDROID_SDK_ROOT" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      - name: Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Configure Gradle
+        shell: bash
+        run: |
+          cd "$PROJECT_DIR"
+          touch gradle.properties
+          echo "kotlin.jvm.target.validation.mode=ignore" >> gradle.properties
+          echo "org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8" >> gradle.properties
+
+      - name: Build APK
+        shell: bash
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+          gradle --no-daemon assembleDebug
+
+      - name: Prepare APK
+        shell: bash
+        run: |
+          set -e
+          APK=$(find "$PROJECT_DIR" -type f -name "*.apk" -print -quit)
+          test -n "$APK"
+
+          mkdir -p apk-output
+          cp "$APK" apk-output/GOAL-X-AI-V2.4-PREMIUM-UI.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GOAL-X-AI-V2.4-PREMIUM-UI-APK
+          path: apk-output/GOAL-X-AI-V2.4-PREMIUM-UI.apk
+          if-no-files-found: error
+          retention-days: 7
