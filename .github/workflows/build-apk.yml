@@ -1,4 +1,4 @@
-name: GOAL-X AI APK
+name: GOAL-X AI V2 APK
 
 on:
   workflow_dispatch:
@@ -17,15 +17,15 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extract FIXED Android project
+      - name: Extract GOAL-X AI V2
         shell: bash
         run: |
           set -e
 
-          ZIP_FILE="./GOAL-X-AI-Android-Project-FIXED.zip"
+          ZIP_FILE="./GOALX_AI_V2_YENI.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "FIXED ZIP bulunamadi: $ZIP_FILE"
+            echo "V2 ZIP bulunamadi: $ZIP_FILE"
             exit 1
           fi
 
@@ -41,9 +41,7 @@ jobs:
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
-
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Proje klasoru: $PROJECT_DIR"
 
       - name: Configure Android SDK
         shell: bash
@@ -60,11 +58,6 @@ jobs:
 
           if [ ! -f "$SDKMANAGER" ]; then
             SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)
-          fi
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager bulunamadi."
-            exit 1
           fi
 
           yes | bash "$SDKMANAGER" \
@@ -88,20 +81,15 @@ jobs:
           set -e
           cd "$PROJECT_DIR"
 
-          touch gradle.properties
-
           echo "" >> gradle.properties
           echo "kotlin.jvm.target.validation.mode=ignore" >> gradle.properties
           echo "org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8" >> gradle.properties
 
-      - name: Build GOAL-X AI APK
+      - name: Build GOAL-X AI V2 APK
         shell: bash
         run: |
           set -e
           cd "$PROJECT_DIR"
-
-          java -version
-          gradle --version
 
           gradle --no-daemon --stacktrace assembleDebug
 
@@ -117,15 +105,13 @@ jobs:
             exit 1
           fi
 
-          echo "APK bulundu: $APK"
-
           mkdir -p "$GITHUB_WORKSPACE/apk-output"
-          cp "$APK" "$GITHUB_WORKSPACE/apk-output/GOAL-X-AI.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/apk-output/GOAL-X-AI-V2.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: GOAL-X-AI-APK
-          path: apk-output/GOAL-X-AI.apk
+          name: GOAL-X-AI-V2-APK
+          path: apk-output/GOAL-X-AI-V2.apk
           if-no-files-found: error
           retention-days: 7
