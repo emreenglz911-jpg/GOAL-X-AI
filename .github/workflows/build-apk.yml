@@ -1,4 +1,4 @@
-name: GOAL-X AI V2.1 PRO SIGNAL APK
+name: GOAL-X AI V2.2 FREE SIGNAL FIX APK
 
 on:
   workflow_dispatch:
@@ -17,29 +17,34 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Extract project
+      - name: Extract V2.2 project
         shell: bash
         run: |
           set -e
-          ZIP_FILE="./GOALX_AI_V2_1_PRO_SIGNAL.zip"
 
-          test -f "$ZIP_FILE"
+          ZIP_FILE="./GOALX_AI_V2_2_FREE_SIGNAL_FIX.zip"
+
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "V2.2 ZIP not found: $ZIP_FILE"
+            exit 1
+          fi
 
           rm -rf android-project
-          mkdir android-project
+          mkdir -p android-project
           unzip -q "$ZIP_FILE" -d android-project
 
           SETTINGS_FILE=$(find android-project -type f -name "settings.gradle*" -print -quit)
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "settings.gradle bulunamadi"
+            echo "Android settings file not found."
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Project: $PROJECT_DIR"
 
-      - name: Android SDK
+      - name: Configure Android SDK
         shell: bash
         run: |
           set -e
@@ -51,6 +56,15 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
 
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -f "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name "sdkmanager" -print -quit)
+          fi
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found."
+            exit 1
+          fi
 
           yes | bash "$SDKMANAGER" \
             --sdk_root="$ANDROID_SDK_ROOT" \
@@ -70,17 +84,24 @@ jobs:
       - name: Configure Gradle
         shell: bash
         run: |
+          set -e
           cd "$PROJECT_DIR"
+
           touch gradle.properties
+          echo "" >> gradle.properties
           echo "kotlin.jvm.target.validation.mode=ignore" >> gradle.properties
           echo "org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8" >> gradle.properties
 
-      - name: Build APK
+      - name: Build V2.2 APK
         shell: bash
         run: |
           set -e
           cd "$PROJECT_DIR"
-          gradle --no-daemon assembleDebug
+
+          java -version
+          gradle --version
+
+          gradle --no-daemon --stacktrace assembleDebug
 
       - name: Prepare APK
         shell: bash
@@ -90,16 +111,19 @@ jobs:
           APK=$(find "$PROJECT_DIR" -type f -name "*.apk" -print -quit)
 
           if [ -z "$APK" ]; then
-            echo "APK bulunamadi"
+            echo "APK not found."
             exit 1
           fi
 
-          mkdir -p apk-output
-          cp "$APK" apk-output/GOAL-X-AI-V2.1-PRO-SIGNAL.apk
+          echo "APK found: $APK"
+
+          mkdir -p "$GITHUB_WORKSPACE/apk-output"
+          cp "$APK" "$GITHUB_WORKSPACE/apk-output/GOAL-X-AI-V2.2-FREE-SIGNAL-FIX.apk"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: GOAL-X-AI-V2.1-PRO-SIGNAL-APK
-          path: apk-output/GOAL-X-AI-V2.1-PRO-SIGNAL.apk
+          name: GOAL-X-AI-V2.2-FREE-SIGNAL-FIX-APK
+          path: apk-output/GOAL-X-AI-V2.2-FREE-SIGNAL-FIX.apk
+          if-no-files-found: error
           retention-days: 7
