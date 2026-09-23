@@ -25,7 +25,7 @@ jobs:
           ZIP_FILE="./GOALX_AI_V2_1_PRO_SIGNAL.zip"
 
           if [ ! -f "$ZIP_FILE" ]; then
-            echo "V2.1 ZIP bulunamadi: $ZIP_FILE"
+            echo "V2.1 ZIP not found: $ZIP_FILE"
             exit 1
           fi
 
@@ -33,17 +33,17 @@ jobs:
           mkdir -p android-project
           unzip -q "$ZIP_FILE" -d android-project
 
-          SETTINGS_FILE=$(find android-project -type f -name "settings.gradle" -o -name "settings.gradle.kts" | head -n 1)
+          SETTINGS_FILE=$(find android-project -type f -name "settings.gradle*" | head -n 1)
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "Android proje dosyalari bulunamadi."
+            echo "Android settings.gradle file not found."
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
 
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Proje klasoru: $PROJECT_DIR"
+          echo "Project directory: $PROJECT_DIR"
 
       - name: Configure Android SDK
         shell: bash
@@ -59,11 +59,11 @@ jobs:
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
 
           if [ ! -f "$SDKMANAGER" ]; then
-            SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name sdkmanager | head -n 1)
+            SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name "sdkmanager" | head -n 1)
           fi
 
           if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager bulunamadi."
+            echo "sdkmanager not found."
             exit 1
           fi
 
@@ -91,4 +91,9 @@ jobs:
           touch gradle.properties
 
           echo "" >> gradle.properties
-         
+          echo "kotlin.jvm.target.validation.mode=ignore" >> gradle.properties
+          echo "org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8" >> gradle.properties
+
+      - name: Build GOAL-X AI V2.1 PRO SIGNAL APK
+        shell: bash
+        run:
