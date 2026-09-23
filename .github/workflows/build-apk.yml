@@ -11,41 +11,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java 17
+      - name: Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Extract GOAL-X AI V2.1 PRO SIGNAL
+      - name: Extract project
         shell: bash
         run: |
           set -e
-
           ZIP_FILE="./GOALX_AI_V2_1_PRO_SIGNAL.zip"
 
-          if [ ! -f "$ZIP_FILE" ]; then
-            echo "V2.1 ZIP not found: $ZIP_FILE"
-            exit 1
-          fi
+          test -f "$ZIP_FILE"
 
           rm -rf android-project
-          mkdir -p android-project
+          mkdir android-project
           unzip -q "$ZIP_FILE" -d android-project
 
-          SETTINGS_FILE=$(find android-project -type f -name "settings.gradle*" | head -n 1)
+          SETTINGS_FILE=$(find android-project -type f -name "settings.gradle*" -print -quit)
 
           if [ -z "$SETTINGS_FILE" ]; then
-            echo "Android settings.gradle file not found."
+            echo "settings.gradle bulunamadi"
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$SETTINGS_FILE")
-
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Project directory: $PROJECT_DIR"
 
-      - name: Configure Android SDK
+      - name: Android SDK
         shell: bash
         run: |
           set -e
@@ -58,15 +52,6 @@ jobs:
 
           SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
 
-          if [ ! -f "$SDKMANAGER" ]; then
-            SDKMANAGER=$(find "$ANDROID_SDK_ROOT/cmdline-tools" -type f -name "sdkmanager" | head -n 1)
-          fi
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "sdkmanager not found."
-            exit 1
-          fi
-
           yes | bash "$SDKMANAGER" \
             --sdk_root="$ANDROID_SDK_ROOT" \
             --licenses >/dev/null || true
@@ -77,7 +62,7 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      - name: Set up Gradle
+      - name: Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
@@ -85,15 +70,36 @@ jobs:
       - name: Configure Gradle
         shell: bash
         run: |
-          set -e
           cd "$PROJECT_DIR"
-
           touch gradle.properties
-
-          echo "" >> gradle.properties
           echo "kotlin.jvm.target.validation.mode=ignore" >> gradle.properties
           echo "org.gradle.jvmargs=-Xmx4g -Dfile.encoding=UTF-8" >> gradle.properties
 
-      - name: Build GOAL-X AI V2.1 PRO SIGNAL APK
+      - name: Build APK
         shell: bash
-        run:
+        run: |
+          set -e
+          cd "$PROJECT_DIR"
+          gradle --no-daemon assembleDebug
+
+      - name: Prepare APK
+        shell: bash
+        run: |
+          set -e
+
+          APK=$(find "$PROJECT_DIR" -type f -name "*.apk" -print -quit)
+
+          if [ -z "$APK" ]; then
+            echo "APK bulunamadi"
+            exit 1
+          fi
+
+          mkdir -p apk-output
+          cp "$APK" apk-output/GOAL-X-AI-V2.1-PRO-SIGNAL.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: GOAL-X-AI-V2.1-PRO-SIGNAL-APK
+          path: apk-output/GOAL-X-AI-V2.1-PRO-SIGNAL.apk
+          retention-days: 7
